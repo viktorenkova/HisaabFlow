@@ -28,6 +28,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
+    "bundle-python": "node scripts/prepare-python-bundle.js",
     "electron": "electron .",
     "electron-dev": "concurrently \"npm start\" \"wait-on http://localhost:3000 && electron .\" --kill-others",
     "electron-pack": "npm run build && electron-builder",
@@ -66,8 +67,19 @@
       "category": "public.app-category.finance",
       "extraResources": [
         {
-          "from": "compiled-backend/hisaabflow-backend",
-          "to": "hisaabflow-backend"
+          "from": "../backend",
+          "to": "backend",
+          "filter": [
+            "**/*",
+            "!tests{,/**/*}",
+            "!__pycache__{,/**/*}",
+            "!*.pyc",
+            "!refund_report_smoke_test.xlsx"
+          ]
+        },
+        {
+          "from": "python-bundle",
+          "to": "python-bundle"
         },
         {
           "from": "../configs",
@@ -84,8 +96,19 @@
       "category": "Office",
       "extraResources": [
         {
-          "from": "compiled-backend/hisaabflow-backend",
-          "to": "hisaabflow-backend"
+          "from": "../backend",
+          "to": "backend",
+          "filter": [
+            "**/*",
+            "!tests{,/**/*}",
+            "!__pycache__{,/**/*}",
+            "!*.pyc",
+            "!refund_report_smoke_test.xlsx"
+          ]
+        },
+        {
+          "from": "python-bundle",
+          "to": "python-bundle"
         },
         {
           "from": "../configs",
@@ -107,11 +130,24 @@
           ]
         }
       ],
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false,
       "compression": "normal",
       "extraResources": [
         {
-          "from": "compiled-backend/hisaabflow-backend.exe",
-          "to": "hisaabflow-backend.exe"
+          "from": "../backend",
+          "to": "backend",
+          "filter": [
+            "**/*",
+            "!tests{,/**/*}",
+            "!__pycache__{,/**/*}",
+            "!*.pyc",
+            "!refund_report_smoke_test.xlsx"
+          ]
+        },
+        {
+          "from": "python-bundle",
+          "to": "python-bundle"
         },
         {
           "from": "../configs",

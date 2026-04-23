@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Button, Badge } from '../ui';
-import { Logo, Sun, Moon } from '../ui/Icons';
+import headerLogo from '../../assets/header-logo.png';
+import { Sun, Moon } from '../ui/Icons';
 
 const AppHeader = () => {
   const theme = useTheme();
@@ -29,15 +29,7 @@ const AppHeader = () => {
   const logoStyles = {
     display: 'flex',
     alignItems: 'center',
-    gap: theme.spacing.sm,
-    color: theme.colors.primary,
-    fontSize: '24px',
-    fontWeight: '700',
     textDecoration: 'none',
-  };
-
-  const versionBadgeStyles = {
-    marginLeft: theme.spacing.sm,
   };
 
   const taglineStyles = {
@@ -72,14 +64,19 @@ const AppHeader = () => {
       {/* Branding Section */}
       <div style={brandingStyles}>
         <div style={logoStyles}>
-          <Logo size={28} color={theme.colors.primary} />
-          <span>HisaabFlow</span>
-          <div style={versionBadgeStyles}>
-            <Badge variant="primary">v1.1.2</Badge>
-          </div>
+          <img
+            src={headerLogo}
+            alt="Program logo"
+            style={{
+              display: 'block',
+              height: '40px',
+              width: 'auto',
+              objectFit: 'contain',
+            }}
+          />
         </div>
         <span style={taglineStyles}>
-          Smart Bank Statement Parser
+          Local Refund Statement Analyzer
         </span>
       </div>
 

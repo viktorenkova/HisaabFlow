@@ -3,8 +3,8 @@ Pydantic models for API requests and responses
 Centralized definition of all data models used by the FastAPI endpoints
 """
 
-from pydantic import BaseModel
-from typing import Dict, List, Optional, Union, Any
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional, Union, Any, Literal
 
 
 class PreviewRequest(BaseModel):
@@ -251,6 +251,83 @@ class ExportResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+
+
+class RefundAnalysisOptions(BaseModel):
+    enable_amount_multiple: bool = True
+    amount_multiple: float = 5000.0
+    enable_email: bool = True
+    enable_refund_phrase: bool = True
+    refund_phrases: List[str] = Field(
+        default_factory=lambda: [
+            "Возврат оплаты по договору",
+            "Возврат оплат по договору",
+            "Возврат по договору",
+        ]
+    )
+    match_mode: Literal["any", "all"] = "any"
+    outgoing_only: bool = True
+
+
+class RefundAnalyzeRequest(BaseModel):
+    file_ids: List[str]
+    options: RefundAnalysisOptions = Field(default_factory=RefundAnalysisOptions)
+
+
+class RefundSummaryByBank(BaseModel):
+    source_bank: str
+    matched_transactions: int
+    matched_amount: float
+
+
+class RefundSummaryByFile(BaseModel):
+    source_file: str
+    source_bank: str
+    matched_transactions: int
+    matched_amount: float
+
+
+class RefundAnalysisSummary(BaseModel):
+    generated_at: str
+    requested_files: int
+    processed_files: int
+    skipped_files: int
+    total_transactions_scanned: int
+    matched_transactions: int
+    total_amount: float
+    unique_emails_count: int
+    unique_emails: List[str]
+    banks: List[str]
+    by_bank: List[RefundSummaryByBank]
+    by_file: List[RefundSummaryByFile]
+
+
+class RefundTransaction(BaseModel):
+    source_bank: str
+    source_parser: str
+    source_file: str
+    account_number: str
+    operation_date: str
+    document_number: str
+    direction: str
+    amount: float
+    counterparty_name: str
+    payment_purpose: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    extracted_email: Optional[str] = None
+    matched_rules: List[str] = Field(default_factory=list)
+
+
+class RefundAnalysisResponse(BaseModel):
+    success: bool
+    summary: RefundAnalysisSummary
+    transactions: List[RefundTransaction]
+    warnings: List[str] = Field(default_factory=list)
+    applied_options: RefundAnalysisOptions
+
+
+class RefundExportRequest(BaseModel):
+    analysis: RefundAnalysisResponse
 
 
 # Unknown Bank Support Models

@@ -4,6 +4,7 @@ File upload and management endpoints
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import tempfile
 import os
+from pathlib import Path
 
 # Import models from centralized location
 from backend.api.models import UploadResponse, CleanupResponse
@@ -15,9 +16,10 @@ uploaded_files = {}
 
 @file_router.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
-    """Upload CSV file and return file info"""
+    """Upload a local statement file and return file info"""
     try:
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+        suffix = Path(file.filename or "").suffix or ".tmp"
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         content = await file.read()
         temp_file.write(content)
         temp_file.close()

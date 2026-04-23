@@ -8,6 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
 import sys
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
  
 # Add project root to path for consistent absolute imports
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,6 +30,7 @@ try:
     from backend.api.parse_endpoints import parse_router
     from backend.api.transform_endpoints import transform_router
     from backend.api.unknown_bank_endpoints import unknown_bank_router
+    from backend.api.refund_endpoints import refund_router
     from backend.api.middleware import setup_logging_middleware
     ROUTERS_AVAILABLE = True
 except ImportError as e:
@@ -34,6 +41,7 @@ except ImportError as e:
     parse_router = None
     transform_router = None
     unknown_bank_router = None
+    refund_router = None
     setup_logging_middleware = None
 
 # Initialize FastAPI app
@@ -72,6 +80,7 @@ if ROUTERS_AVAILABLE:
     v1_router.include_router(transform_router, tags=["transformation"])
     v1_router.include_router(config_router, tags=["configs"])
     v1_router.include_router(unknown_bank_router, tags=["unknown-bank"])
+    v1_router.include_router(refund_router, tags=["refunds"])
     
     app.include_router(v1_router, prefix="/api/v1")
 else:
