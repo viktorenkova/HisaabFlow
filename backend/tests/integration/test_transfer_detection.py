@@ -70,7 +70,7 @@ class TestTransferDetection:
                 'Date': '2025-01-15', 
                 'Amount': 1000.0,
                 'Title': pattern,
-                'Account': 'EURO Wise',
+                'Account': 'Wise EUR',
                 'Category': 'Transfer',
                 '_source_bank': 'wise'
             }
@@ -145,7 +145,7 @@ class TestTransferDetection:
                 'Date': '2025-01-16',
                 'Amount': -500.0,
                 'Title': 'Transfer to external account',
-                'Account': 'EURO Wise',
+                'Account': 'Wise EUR',
                 'Category': 'Transfer',
                 '_source_bank': 'wise'
             }
@@ -196,7 +196,7 @@ class TestTransferDetection:
             'Date': '2025-01-15',  # Same date
             'Amount': 1500.0,     # Opposite amount
             'Title': 'Received money from John Doe',  # Use Wise pattern with matching name
-            'Account': 'EURO Wise',
+            'Account': 'Wise EUR',
             'Category': 'Transfer',
             '_source_bank': 'wise'
         }

@@ -1,0 +1,10 @@
+"""Pytest bootstrap for reliable local imports."""
+from pathlib import Path
+import sys
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+project_root_str = str(PROJECT_ROOT)
+
+if project_root_str not in sys.path:
+    sys.path.insert(0, project_root_str)

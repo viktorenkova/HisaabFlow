@@ -1,24 +1,13 @@
-"""
-Data cleaning service for description cleaning and categorization
-"""
+"""Data cleaning service for description cleaning and categorization."""
 from typing import Dict, List, Any, Optional
-from pathlib import Path
-
 from backend.infrastructure.config.unified_config_service import get_unified_config_service
 
 
 class DataCleaningService:
-    """Service focused on data cleaning and categorization"""
+    """Service focused on data cleaning and categorization."""
     
     def __init__(self):
-        # Determine config directory path
-        current_file_dir = Path(__file__).resolve().parent
-        project_root = current_file_dir.parent.parent.parent
-        config_dir_path = project_root / "configs"
-        config_dir_path_str = str(config_dir_path)
-        
-        # Create unified config service instance
-        self.config_service = get_unified_config_service(config_dir_path_str)
+        self.config_service = get_unified_config_service()
         
         print(f"ℹ [DataCleaningService] Initialized with unified config service")
     
@@ -53,9 +42,9 @@ class DataCleaningService:
         
         return data_after_recategorization
     
-    def _apply_standard_description_cleaning(self, data: List[Dict[str, Any]], 
+    def _apply_standard_description_cleaning(self, data: List[Dict[str, Any]],
                                            csv_data_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Apply bank-specific description cleaning to data"""
+        """Apply bank-specific description cleaning to data."""
         print(f"   Applying standard description cleaning...")
         print(f"      [DATA] Data rows to clean: {len(data)}")
         
@@ -71,24 +60,9 @@ class DataCleaningService:
         
         for row_idx, row in enumerate(data):
             account = row.get('Account', '')
-            bank_name = None
+            bank_name = self._resolve_bank_name_for_row(row, csv_data_list)
             
             print(f"         Row {row_idx + 1}: Account='{account}', Title='{row.get('Title', '')}'")
-            
-            # Find bank type based on Account name matching
-            for csv_idx, csv_data in enumerate(csv_data_list):
-                bank_info = csv_data.get('bank_info', {})
-                detected_bank = bank_info.get('bank_name', bank_info.get('detected_bank'))
-                print(f"            CSV {csv_idx}: detected_bank='{detected_bank}'")
-                
-                if detected_bank and detected_bank != 'unknown':
-                    # Check if this transaction's account matches this bank's account
-                    if self._account_matches_bank_config(account, detected_bank):
-                        bank_name = detected_bank
-                        print(f"            [SUCCESS] MATCH! Using bank: {bank_name}")
-                        break
-                    else:
-                        print(f"            [NO MATCH] Account '{account}' doesn't match this bank")
             
             if bank_name:
                 bank_matches[bank_name] = bank_matches.get(bank_name, 0) + 1
@@ -116,26 +90,12 @@ class DataCleaningService:
     
     def _apply_conditional_description_overrides(self, data: List[Dict[str, Any]], 
                                                csv_data_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Apply conditional description overrides defined in bank .conf files"""
+        """Apply conditional description overrides defined in bank .conf files."""
         print(f"   Applying conditional description overrides...")
         conditional_changes_count = 0
         
         for row_idx, row in enumerate(data):
-            account = row.get('Account', '')
-            bank_name_for_row = None
-            
-            # Determine bank_name for the current row
-            for csv_data in csv_data_list:
-                bank_info = csv_data.get('bank_info', {})
-                detected_bank = bank_info.get('bank_name', bank_info.get('detected_bank'))
-                if detected_bank and detected_bank != 'unknown':
-                    try:
-                        bank_cfg_obj_check = self.config_service.get_bank_config(detected_bank)
-                        if bank_cfg_obj_check and bank_cfg_obj_check.cashew_account == account:
-                            bank_name_for_row = detected_bank
-                            break
-                    except Exception:
-                        continue
+            bank_name_for_row = self._resolve_bank_name_for_row(row, csv_data_list)
             
             if not bank_name_for_row:
                 continue
@@ -192,26 +152,12 @@ class DataCleaningService:
     
     def _apply_keyword_categorization(self, data: List[Dict[str, Any]], 
                                     csv_data_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Apply keyword-based categorization from .conf files using final descriptions"""
+        """Apply keyword-based categorization from .conf files using final descriptions."""
         print(f"   Applying keyword-based categorization (post-cleaning)...")
         categorized_count = 0
         
         for row_idx, row in enumerate(data):
-            account = row.get('Account', '')
-            bank_name_for_row = None
-            
-            # Determine bank_name for the current row
-            for csv_data in csv_data_list:
-                bank_info = csv_data.get('bank_info', {})
-                detected_bank = bank_info.get('bank_name', bank_info.get('detected_bank'))
-                if detected_bank and detected_bank != 'unknown':
-                    try:
-                        bank_cfg_obj_check = self.config_service.get_bank_config(detected_bank)
-                        if bank_cfg_obj_check and self._account_matches_bank(bank_cfg_obj_check, account, csv_data_list):
-                            bank_name_for_row = detected_bank
-                            break
-                    except Exception:
-                        continue
+            bank_name_for_row = self._resolve_bank_name_for_row(row, csv_data_list)
             
             if not bank_name_for_row:
                 continue
@@ -234,49 +180,78 @@ class DataCleaningService:
         print(f"      Applied keyword categorization to {categorized_count} rows (post-cleaning)")
         return data
     
+    def _get_detected_bank_name(self, csv_data: Dict[str, Any]) -> Optional[str]:
+        """Extract a normalized detected bank name from CSV metadata."""
+        bank_info = csv_data.get('bank_info', {})
+        detected_bank = bank_info.get('bank_name', bank_info.get('detected_bank'))
+        if not detected_bank:
+            return None
+        detected_bank = str(detected_bank).strip().lower()
+        return detected_bank if detected_bank and detected_bank != 'unknown' else None
+
+    def _resolve_bank_name_for_row(self, row: Dict[str, Any],
+                                  csv_data_list: List[Dict[str, Any]]) -> Optional[str]:
+        """
+        Resolve the bank for a transformed row using one shared strategy.
+
+        Priority:
+        1. `_source_bank` set during parsing/transformation.
+        2. Fallback to Account matching against each detected bank config.
+        """
+        source_bank = row.get('_source_bank')
+        if source_bank:
+            normalized_source_bank = str(source_bank).strip().lower()
+            if normalized_source_bank != 'unknown':
+                bank_config = self.config_service.get_bank_config(normalized_source_bank)
+                if bank_config:
+                    print(f"            [BANK] Using _source_bank='{normalized_source_bank}'")
+                    return normalized_source_bank
+
+        account = row.get('Account', '')
+        for csv_idx, csv_data in enumerate(csv_data_list):
+            detected_bank = self._get_detected_bank_name(csv_data)
+            print(f"            CSV {csv_idx}: detected_bank='{detected_bank}'")
+
+            if not detected_bank:
+                continue
+
+            if self._account_matches_bank_config(account, detected_bank):
+                print(f"            [SUCCESS] MATCH! Using bank: {detected_bank}")
+                return detected_bank
+
+            print(f"            [NO MATCH] Account '{account}' doesn't match bank '{detected_bank}'")
+
+        return None
+
     def _account_matches_bank_config(self, account: str, bank_name: str) -> bool:
-        """Check if account matches bank configuration"""
+        """Check if account matches bank configuration."""
         try:
             bank_config = self.config_service.get_bank_config(bank_name)
             if bank_config:
-                cashew_account = bank_config.cashew_account
-                has_account_mapping = bool(bank_config.account_mapping)
-                
-                print(f"               Bank config cashew_account: '{cashew_account}'")
-                
-                # Check if this transaction's account matches this bank's account
-                if cashew_account and account == cashew_account:
-                    # Single account bank - direct match
-                    print(f"               [MATCH] Account '{account}' matches cashew_account '{cashew_account}'")
-                    return True
-                elif has_account_mapping:
-                    # Multi-currency bank - check account_mapping
-                    account_mapping = bank_config.account_mapping
-                    if account in account_mapping.values():
-                        print(f"               [MATCH] Account '{account}' found in account_mapping")
-                        return True
-                    else:
-                        print(f"               [NO MATCH] Account '{account}' not in account_mapping")
-                        return False
-                else:
-                    print(f"               [NO MATCH] Account '{account}' doesn't match cashew_account '{cashew_account}'")
-                    return False
+                return self._account_matches_bank(bank_config, account)
         except Exception as e:
             print(f"            [WARNING] Error getting bank config: {e}")
             return False
         
         return False
     
-    def _account_matches_bank(self, bank_config, account: str, csv_data_list: List[Dict[str, Any]]) -> bool:
-        """Check if account matches bank configuration for both single and multi-currency banks"""
+    def _account_matches_bank(self, bank_config, account: str) -> bool:
+        """Check if account matches bank configuration for both single and multi-currency banks."""
+        print(f"               Bank config cashew_account: '{bank_config.cashew_account}'")
+
         # Tier 1: Single-currency banks (cashew_account match)
         if bank_config.cashew_account and bank_config.cashew_account == account:
+            print(f"               [MATCH] Account '{account}' matches cashew_account '{bank_config.cashew_account}'")
             return True
         
         # Tier 2: Multi-currency banks (account_mapping values match)
         if bank_config.account_mapping:
-            for currency, account_name in bank_config.account_mapping.items():
-                if account_name == account:
-                    return True
+            if account in bank_config.account_mapping.values():
+                print(f"               [MATCH] Account '{account}' found in account_mapping")
+                return True
+            print(f"               [NO MATCH] Account '{account}' not in account_mapping")
+            return False
+
+        print(f"               [NO MATCH] Account '{account}' doesn't match cashew_account '{bank_config.cashew_account}'")
         
         return False

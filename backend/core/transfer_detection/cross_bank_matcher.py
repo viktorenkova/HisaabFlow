@@ -11,7 +11,7 @@ from backend.infrastructure.config.unified_config_service import get_unified_con
 class CrossBankMatcher:
     """Handles cross-bank transfer detection using configuration-driven rules"""
     
-    def __init__(self, config_dir: str = "configs", config_service=None):
+    def __init__(self, config_dir: Optional[str] = None, config_service=None):
         if config_service:
             self.config = config_service
         else:

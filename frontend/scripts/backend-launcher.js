@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
 
 class BackendLauncher {
   constructor(userDir = null) {
@@ -11,117 +12,96 @@ class BackendLauncher {
     this.backendPid = null; // Track PID separately for Windows
     this.backendExecutableName = null; // Track executable name
     this.lastStartupError = null;
+    this.launchLogPath = null;
+    this.backendLogPath = null;
+    this.initializeLogging();
   }
 
-  getBackendExecutable() {
-    const isDev = require('electron-is-dev');
-    
-    if (isDev) {
-      // Development: still use Python approach for easier debugging
-      return null;
-    } else {
-      // Production: use compiled executable for ALL platforms
-      const execName = process.platform === 'win32' 
-        ? 'hisaabflow-backend.exe' 
-        : 'hisaabflow-backend';
-      return path.join(process.resourcesPath, execName);
-    }
+  initializeLogging() {
+    const baseDir = this.userDir || path.join(os.homedir(), 'HisaabFlow');
+    const logDir = path.join(baseDir, 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    this.launchLogPath = path.join(logDir, 'electron-backend-launcher.log');
+    this.backendLogPath = path.join(logDir, 'backend-runtime.log');
   }
 
-  async startCompiledBackend(exePath) {
-    console.log('Using compiled backend executable');
-    console.log(` Executable path: ${exePath}`);
-    
+  writeLogLine(filePath, message) {
+    const line = `[${new Date().toISOString()}] ${message}\n`;
     try {
-      // Set up environment with user configs directory and UTF-8 support
-      const env = { ...process.env };
-      
-      // Force UTF-8 encoding for cross-platform compatibility
-      env.PYTHONUTF8 = '1';
-      env.PYTHONIOENCODING = 'utf-8';
-      
-      if (this.userDir) {
-        env.HISAABFLOW_USER_DIR = this.userDir;
-        env.HISAABFLOW_CONFIG_DIR = path.join(this.userDir, 'configs');
-        console.log(` Using user configs: ${env.HISAABFLOW_CONFIG_DIR}`);
-      }
-      
-      // Start the compiled executable with Windows-specific handling
-      const spawnOptions = {
-        env: env,
-        stdio: 'pipe'
-      };
-      
-      // Windows: Don't detach to maintain parent-child relationship for proper cleanup
-      // Unix: Detach for better process group control
-      if (process.platform === 'win32') {
-        // Windows: Keep attached for proper process management
-        spawnOptions.detached = false;
-        // Create new process group to allow clean termination
-        spawnOptions.windowsVerbatimArguments = false;
-      } else {
-        // Unix: Detach for process group control
-        spawnOptions.detached = true;
-      }
-      
-      this.backendProcess = spawn(exePath, [], spawnOptions);
-      
-      // Track process details for Windows cleanup
-      this.backendPid = this.backendProcess.pid;
-      this.backendExecutableName = path.basename(exePath);
-      console.log(`[DEBUG] Backend started - PID: ${this.backendPid}, Executable: ${this.backendExecutableName}`);
-
-      this.setupProcessHandlers();
-      
-      // Wait for backend to be ready
-      await this.waitForBackend();
-      this.isRunning = true;
-      this.lastStartupError = null;
-      
-      console.log('[SUCCESS] Compiled backend started successfully');
-      return true;
-      
+      fs.appendFileSync(filePath, line, 'utf8');
     } catch (error) {
-      this.lastStartupError = error;
-      console.error('[ERROR]  Failed to start compiled backend:', error);
-      return false;
+      console.error(`[LOGGER] Failed to write log file ${filePath}:`, error);
     }
+  }
+
+  log(level, message, meta = null) {
+    const fullMessage = meta ? `${message} ${JSON.stringify(meta)}` : message;
+    const logLine = `[${level}] ${fullMessage}`;
+    if (level === 'ERROR') {
+      console.error(logLine);
+    } else if (level === 'WARN') {
+      console.warn(logLine);
+    } else {
+      console.log(logLine);
+    }
+    this.writeLogLine(this.launchLogPath, logLine);
+  }
+
+  logBackendOutput(stream, message) {
+    const trimmedMessage = message.toString().trim();
+    if (!trimmedMessage) {
+      return;
+    }
+    const logLine = `[${stream}] ${trimmedMessage}`;
+    if (stream === 'STDERR') {
+      console.error(`[BACKEND] ${trimmedMessage}`);
+    } else {
+      console.log(`[BACKEND] ${trimmedMessage}`);
+    }
+    this.writeLogLine(this.backendLogPath, logLine);
+  }
+
+  getLogFilePaths() {
+    return {
+      launcherLog: this.launchLogPath,
+      backendLog: this.backendLogPath
+    };
   }
 
   async startBackend() {
-    console.log('[START] Starting HisaabFlow backend...');
-    console.log(' DEBUG: Platform:', process.platform);
-    console.log(' DEBUG: resourcesPath:', process.resourcesPath);
-    console.log(' DEBUG: __dirname:', __dirname);
-    
-    // Check for compiled executable first (ALL platforms in production)
-    const backendExe = this.getBackendExecutable();
-    
-    if (backendExe && require('fs').existsSync(backendExe)) {
-      return this.startCompiledBackend(backendExe);
-    } else {
-      console.log(`[WARNING] Compiled backend executable not found, falling back to bundled Python backend: ${backendExe}`);
-      return this.startPythonBackend();
-    }
+    this.log('INFO', 'Starting HisaabFlow backend', {
+      platform: process.platform,
+      resourcesPath: process.resourcesPath,
+      scriptDir: __dirname,
+      port: this.port,
+      userDir: this.userDir,
+      startupMode: 'bundled-python-only'
+    });
+    return this.startPythonBackend();
   }
 
   async startPythonBackend() {
-    console.log(' Using bundled Python backend approach');
+    this.log('INFO', 'Using bundled Python backend startup path');
     
     try {
       const backendPath = this.getBackendPath();
-      console.log(` Backend path: ${backendPath}`);
-      console.log(` Backend exists: ${require('fs').existsSync(backendPath)}`);
-      
-      if (require('fs').existsSync(backendPath)) {
-        const backendFiles = require('fs').readdirSync(backendPath);
-        console.log(` Backend files: ${backendFiles.join(', ')}`);
+      const backendExists = fs.existsSync(backendPath);
+      this.log('INFO', 'Resolved backend path', { backendPath, exists: backendExists });
+
+      if (!backendExists) {
+        throw new Error(`Backend path not found: ${backendPath}`);
       }
+
+      const backendFiles = fs.readdirSync(backendPath);
+      this.log('INFO', 'Backend directory contents', { backendFiles });
       
       // Ensure virtual environment exists and get Python path
       const pythonPath = await this.ensureVenv();
-      console.log(` Python path: ${pythonPath}`);
-      console.log(` Python exists: ${require('fs').existsSync(pythonPath)}`);
+      const pythonExists = fs.existsSync(pythonPath);
+      this.log('INFO', 'Resolved Python path', { pythonPath, exists: pythonExists });
+      if (!pythonExists) {
+        throw new Error(`Python runtime not found: ${pythonPath}`);
+      }
       
       // Test Python execution
       console.log('🧪 Testing Python execution...');
@@ -141,7 +121,7 @@ class BackendLauncher {
       if (this.userDir) {
         env.HISAABFLOW_USER_DIR = this.userDir;
         env.HISAABFLOW_CONFIG_DIR = path.join(this.userDir, 'configs');
-        console.log(` Using user configs: ${env.HISAABFLOW_CONFIG_DIR}`);
+        this.log('INFO', 'Using user config directory', { configDir: env.HISAABFLOW_CONFIG_DIR });
       }
       
       this.backendProcess = spawn(pythonPath, [
@@ -160,50 +140,57 @@ class BackendLauncher {
       
       // Track process details for Windows cleanup
       this.backendPid = this.backendProcess.pid;
-      this.backendExecutableName = 'python.exe'; // Python process for development
-      console.log(`[DEBUG] Python backend started - PID: ${this.backendPid}`);
+      this.backendExecutableName = path.basename(pythonPath);
+      this.log('INFO', 'Spawned backend process', {
+        pid: this.backendPid,
+        executable: this.backendExecutableName,
+        backendPath,
+        pythonPath,
+        configDir: env.HISAABFLOW_CONFIG_DIR || null
+      });
 
       this.setupProcessHandlers();
       
       // Wait for backend to be ready
       await this.waitForBackend();
       this.isRunning = true;
+      this.lastStartupError = null;
       
-      console.log('[SUCCESS] Python backend started successfully');
+      this.log('INFO', 'Python backend started successfully');
       return true;
       
     } catch (error) {
       this.lastStartupError = error;
-      console.error('[ERROR]  Failed to start Python backend:', error);
+      this.log('ERROR', 'Failed to start Python backend', { message: error.message });
       return false;
     }
   }
 
   setupProcessHandlers() {
     this.backendProcess.stdout.on('data', (data) => {
-      console.log(` Backend: ${data.toString().trim()}`);
+      this.logBackendOutput('STDOUT', data);
     });
 
     this.backendProcess.stderr.on('data', (data) => {
-      console.error(`[WARNING] Backend error: ${data.toString().trim()}`);
+      this.logBackendOutput('STDERR', data);
     });
 
     this.backendProcess.on('close', (code) => {
-      console.log(` Backend process exited with code ${code}`);
+      this.log('WARN', 'Backend process closed', { code });
       this.isRunning = false;
       this.backendProcess = null; // Clear the reference
       this.backendPid = null; // Clear PID tracking
     });
 
     this.backendProcess.on('exit', (code, signal) => {
-      console.log(` Backend process exit - code: ${code}, signal: ${signal}`);
+      this.log('WARN', 'Backend process exited', { code, signal });
       this.isRunning = false;
       this.backendProcess = null; // Clear the reference
       this.backendPid = null; // Clear PID tracking
     });
 
     this.backendProcess.on('error', (error) => {
-      console.error('[ERROR] Backend process error:', error);
+      this.log('ERROR', 'Backend process error', { message: error.message });
       this.isRunning = false;
       this.backendProcess = null; // Clear the reference
       this.backendPid = null; // Clear PID tracking
@@ -251,21 +238,21 @@ class BackendLauncher {
         headers: { 'Content-Type': 'application/json' }
       });
       
-      console.log('[DEBUG] Shutdown request sent, response:', response.data);
+      this.log('INFO', 'Shutdown request sent', { response: response.data });
       
       // Wait for process to actually exit
       const processExited = await this.waitForProcessExit(3000);
       
       if (processExited) {
-        console.log('[SUCCESS] Process exited after HTTP shutdown');
+        this.log('INFO', 'Process exited after HTTP shutdown');
         return true;
       } else {
-        console.log('[WARNING] Process did not exit after HTTP shutdown');
+        this.log('WARN', 'Process did not exit after HTTP shutdown');
         return false;
       }
       
     } catch (error) {
-      console.log(`[WARNING] HTTP shutdown failed: ${error.message}`);
+      this.log('WARN', 'HTTP shutdown failed', { message: error.message });
       return false;
     }
   }
@@ -541,64 +528,24 @@ class BackendLauncher {
                   
                   taskkill.on('close', (code) => {
                     console.log(`[DEBUG] taskkill PID exited with code: ${code}, output: ${taskkillOutput}`);
-                    
-                    // Immediately try killing by name as backup
-                    console.log('[SHUTDOWN] Killing hisaabflow-backend.exe by name...');
-                    const taskkillName = spawn('taskkill', ['/IM', 'hisaabflow-backend.exe', '/T', '/F'], {
-                      stdio: 'pipe',
-                      detached: false
-                    });
-                    
-                    let nameOutput = '';
-                    
-                    taskkillName.stdout.on('data', (data) => {
-                      nameOutput += data.toString();
-                    });
-                    
-                    taskkillName.stderr.on('data', (data) => {
-                      nameOutput += data.toString();
-                    });
-                    
-                    taskkillName.on('close', (nameCode) => {
-                      console.log(`[DEBUG] taskkill by name exited with code: ${nameCode}, output: ${nameOutput}`);
-                      
-                      if (!terminated) {
-                        terminated = true;
-                        console.log('[SUCCESS] Windows process terminated via taskkill');
-                        resolve();
-                      }
-                    });
-                    
-                    taskkillName.on('error', (nameError) => {
-                      console.error('[WARNING] taskkill by name failed:', nameError.message);
-                      if (!terminated) {
-                        terminated = true;
-                        resolve();
-                      }
-                    });
+                    if (!terminated) {
+                      terminated = true;
+                      console.log('[SUCCESS] Windows process terminated via taskkill /PID');
+                      resolve();
+                    }
                   });
                   
                   taskkill.on('error', (error) => {
                     console.error('[WARNING] taskkill PID failed:', error.message);
-                    // Still try by name as fallback
-                    const taskkillName = spawn('taskkill', ['/IM', 'hisaabflow-backend.exe', '/T', '/F'], {
-                      stdio: 'ignore',
-                      detached: true
-                    });
-                    
-                    taskkillName.on('close', () => {
-                      if (!terminated) {
-                        terminated = true;
-                        resolve();
-                      }
-                    });
-                    
-                    taskkillName.on('error', () => {
-                      if (!terminated) {
-                        terminated = true;
-                        resolve();
-                      }
-                    });
+                    try {
+                      process.kill(processPid, 'SIGKILL');
+                    } catch (finalError) {
+                      console.error('[WARNING] Final kill attempt failed:', finalError.message);
+                    }
+                    if (!terminated) {
+                      terminated = true;
+                      resolve();
+                    }
                   });
                   
                 } catch (taskillError) {
@@ -786,49 +733,33 @@ class BackendLauncher {
       if (process.platform === 'win32') {
         // Windows emergency cleanup
         console.log('[EMERGENCY] Windows emergency cleanup...');
-        
-        // Kill ALL hisaabflow-backend.exe processes (nuclear option)
-        console.log('[EMERGENCY] Killing ALL hisaabflow-backend.exe processes...');
-        const killAll = spawn('taskkill', ['/IM', 'hisaabflow-backend.exe', '/T', '/F'], {
-          stdio: 'pipe',
-          detached: false
-        });
-        
-        let killOutput = '';
-        killAll.stdout.on('data', (data) => killOutput += data.toString());
-        killAll.stderr.on('data', (data) => killOutput += data.toString());
-        
-        await new Promise((resolve) => {
-          killAll.on('close', (code) => {
-            console.log(`[EMERGENCY] taskkill ALL exit code: ${code}, output: ${killOutput}`);
-            resolve();
+
+        const pidToKill = this.backendPid;
+        if (!pidToKill) {
+          console.log('[EMERGENCY] No tracked backend PID available, skipping Windows emergency taskkill');
+        } else {
+          console.log(`[EMERGENCY] Killing tracked backend PID ${pidToKill}...`);
+          const killAll = spawn('taskkill', ['/PID', pidToKill.toString(), '/T', '/F'], {
+            stdio: 'pipe',
+            detached: false
           });
-          killAll.on('error', (error) => {
-            console.error('[WARNING] Emergency taskkill failed:', error.message);
-            resolve();
+
+          let killOutput = '';
+          killAll.stdout.on('data', (data) => killOutput += data.toString());
+          killAll.stderr.on('data', (data) => killOutput += data.toString());
+
+          await new Promise((resolve) => {
+            killAll.on('close', (code) => {
+              console.log(`[EMERGENCY] taskkill /PID exit code: ${code}, output: ${killOutput}`);
+              resolve();
+            });
+            killAll.on('error', (error) => {
+              console.error('[WARNING] Emergency taskkill failed:', error.message);
+              resolve();
+            });
+            setTimeout(resolve, 2000); // Short timeout
           });
-          setTimeout(resolve, 2000); // Short timeout
-        });
-        
-        // Also kill any Python processes running uvicorn for good measure
-        console.log('[EMERGENCY] Killing Python uvicorn processes...');
-        const killPython = spawn('wmic', [
-          'process', 'where', 
-          'name="python.exe" and commandline like "%uvicorn%" and commandline like "%main:app%"', 
-          'delete'
-        ], { 
-          stdio: 'ignore',
-          detached: false
-        });
-        
-        await new Promise((resolve) => {
-          killPython.on('close', (code) => {
-            console.log(`[EMERGENCY] wmic Python cleanup exit code: ${code}`);
-            resolve();
-          });
-          killPython.on('error', () => resolve());
-          setTimeout(resolve, 2000); // Short timeout
-        });
+        }
         
       } else {
         // Unix emergency cleanup

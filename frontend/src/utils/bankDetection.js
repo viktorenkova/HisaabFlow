@@ -20,7 +20,7 @@ export const detectBankFromFilename = (filename) => {
       defaultStartRow: 13,
       defaultEncoding: 'utf-8',
       confidence: 0.9,
-      detectedBank: 'NayaPay'
+      detectedBank: 'nayapay'
     };
   }
   
@@ -40,12 +40,13 @@ export const detectBankFromFilename = (filename) => {
     }
     
     return {
-      bankType: 'Transferwise',
+      bankType: 'Wise',
       suggestedTemplate: template,
+      cleanedTemplate: template,
       defaultStartRow: 0,
       defaultEncoding: 'utf-8',
       confidence: confidence,
-      detectedBank: 'Transferwise'
+      detectedBank: 'wise'
     };
   }
   

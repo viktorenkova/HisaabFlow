@@ -72,7 +72,7 @@ def wise_multi_currency_transactions():
             'Amount': -155.0,
             'Title': 'Card transaction of 155.00 EUR issued by Revolut**0540* Dublin',
             'Currency': 'EUR',
-            'Account': 'Wise',  # Should become 'EURO Wise'
+            'Account': 'Wise',  # Should become 'Wise EUR'
             'Category': 'Shopping',
             '_source_bank': 'wise'
         },
@@ -81,7 +81,7 @@ def wise_multi_currency_transactions():
             'Amount': -50.0,
             'Title': 'Transfer to bank account',
             'Currency': 'USD',
-            'Account': 'Wise',  # Should become 'TransferWise'
+            'Account': 'Wise',  # Should become 'Wise USD'
             'Category': 'Transfer',
             '_source_bank': 'wise'
         },
@@ -147,7 +147,7 @@ def cross_bank_transfer_pair():
             'Date': '2025-01-15',
             'Amount': 1000.0,
             'Title': 'Received money from Jane Smith',  # Matches Wise pattern
-            'Account': 'EURO Wise',
+            'Account': 'Wise EUR',
             'Category': 'Transfer', 
             '_source_bank': 'wise'
         }

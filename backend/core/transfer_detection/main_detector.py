@@ -19,7 +19,7 @@ class TransferDetector:
     4. 24-hour date tolerance with fallback to traditional amount matching
     """
     
-    def __init__(self, config_dir: str = "configs", config_service=None):
+    def __init__(self, config_dir: Optional[str] = None, config_service=None):
         if config_service:
             self.config = config_service
         else:

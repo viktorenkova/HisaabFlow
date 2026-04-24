@@ -35,7 +35,7 @@ chmod +x HisaabFlow.AppImage
 
 ```bash
 # Download HisaabFlow.exe
-# Note: You may see a security warning since the app is unsigned
+# Note: The installer and app are currently unsigned, so Windows may show a security warning
 # Click "More info" → "Run anyway" to proceed
 ```
 
@@ -47,6 +47,49 @@ cd HisaabFlow
 chmod +x start_app.sh
 ./start_app.sh
 ```
+
+## Windows Release Gate
+
+For repeatable Windows verification from a built package:
+
+```bash
+cd frontend
+npm run verify:release:win
+```
+
+This runs the backend test suite, starts the packaged backend from `dist/win-unpacked/resources`, and executes the packaged smoke suite against the live HTTP endpoints.
+
+To build first and then run the same gate:
+
+```bash
+cd frontend
+npm run verify:release:win:build
+```
+
+To validate the actual NSIS installer path as well:
+
+```bash
+cd frontend
+npm run verify:installer:win
+```
+
+For the full Windows stage-1 pipeline in one command:
+
+```bash
+cd frontend
+npm run verify:stage1:win
+```
+
+This refreshes the embedded Python bundle when needed, builds the Windows package, runs the installed-app gate, executes packaged smoke checks, and cleans up the smoke installation afterwards.
+
+The stage-1 run now also writes machine-readable reports to:
+
+```bash
+.release-gate/windows-installer-gate-report.json
+.release-gate/windows-release-installed-report.json
+```
+
+Use these together with the manual validation checklist in [docs/windows-manual-qa.md](docs/windows-manual-qa.md) when you verify the installer on other Windows machines.
 
 ## Supported Banks
 

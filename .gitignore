@@ -172,3 +172,9 @@ frontend/builder-*.yaml
 *.tmp
 *.temp
 backend.log
+
+# Local release/test artifacts
+.release-gate/
+tmp_user_configs_test/
+frontend/python-bundle.staging/
+config-consistency-*/

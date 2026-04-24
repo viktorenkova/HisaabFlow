@@ -122,11 +122,12 @@ async function createWindow() {
   if (!backendStarted) {
     console.error('[ERROR]  Failed to start backend - app may not work correctly');
     const startupError = backendLauncher.getLastStartupErrorMessage();
+    const logFiles = backendLauncher.getLogFilePaths ? backendLauncher.getLogFilePaths() : null;
     dialog.showErrorBox(
       'HisaabFlow backend failed to start',
       startupError
-        ? `Backend did not become ready.\n\nDetails: ${startupError}`
-        : 'Backend did not become ready. File upload and statement analysis are unavailable.'
+        ? `Backend did not become ready.\n\nDetails: ${startupError}\n\nLauncher log: ${logFiles?.launcherLog || 'unavailable'}\nBackend log: ${logFiles?.backendLog || 'unavailable'}`
+        : `Backend did not become ready. File upload and statement analysis are unavailable.\n\nLauncher log: ${logFiles?.launcherLog || 'unavailable'}\nBackend log: ${logFiles?.backendLog || 'unavailable'}`
     );
     app.quit();
     return;
@@ -296,33 +297,23 @@ async function cleanup() {
       }
       
       if (process.platform === 'win32') {
-        // Windows: Try to kill by process name as last resort
+        // Windows: Try to kill only the tracked backend PID as last resort
         const { spawn } = require('child_process');
         try {
-          console.log('[EMERGENCY] Windows: Killing hisaabflow-backend.exe processes...');
-          const killBackend = spawn('taskkill', ['/f', '/im', 'hisaabflow-backend.exe'], { 
-            stdio: 'ignore',
-            detached: true 
-          });
-          
-          killBackend.on('close', (code) => {
-            console.log(`[EMERGENCY] taskkill hisaabflow-backend exit code: ${code}`);
-          });
-          
-          // Also kill any Python processes running uvicorn
-          console.log('[EMERGENCY] Windows: Killing Python uvicorn processes...');
-          const killPython = spawn('wmic', [
-            'process', 'where', 
-            'name="python.exe" and commandline like "%uvicorn%" and commandline like "%main:app%"', 
-            'delete'
-          ], { 
-            stdio: 'ignore',
-            detached: true 
-          });
-          
-          killPython.on('close', (code) => {
-            console.log(`[EMERGENCY] wmic Python cleanup exit code: ${code}`);
-          });
+          const backendPid = backendLauncher.getBackendPid ? backendLauncher.getBackendPid() : null;
+          if (backendPid) {
+            console.log(`[EMERGENCY] Windows: Killing tracked backend PID ${backendPid}...`);
+            const killBackend = spawn('taskkill', ['/PID', backendPid.toString(), '/T', '/F'], {
+              stdio: 'ignore',
+              detached: true
+            });
+
+            killBackend.on('close', (code) => {
+              console.log(`[EMERGENCY] taskkill /PID exit code: ${code}`);
+            });
+          } else {
+            console.log('[EMERGENCY] Windows: No tracked backend PID available for taskkill');
+          }
           
         } catch (emergencyError) {
           console.error('[WARNING] Emergency cleanup failed:', emergencyError.message);

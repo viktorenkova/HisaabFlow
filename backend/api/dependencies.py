@@ -10,7 +10,7 @@ from backend.services.export_service import ExportService
 from backend.infrastructure.config.api_facade import APIConfigFacade
 
 
-from backend.infrastructure.config.unified_config_service import get_unified_config_service
+from backend.infrastructure.config.unified_config_service import get_unified_config_service, resolve_config_dir
 
 @lru_cache()
 def get_preview_service() -> PreviewService:
@@ -49,14 +49,4 @@ def get_export_service() -> ExportService:
 @lru_cache()
 def get_config_manager() -> APIConfigFacade:
     """Get singleton APIConfigFacade instance with proper path detection"""
-    from backend.infrastructure.csv_parsing.utils import get_config_dir_for_manager
-    import os
-    
-    user_config_dir = get_config_dir_for_manager()
-    if user_config_dir:
-        config_dir = user_config_dir
-    else:
-        # Fallback to relative path
-        config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "configs"))
-    
-    return APIConfigFacade(config_dir)
+    return APIConfigFacade(resolve_config_dir())

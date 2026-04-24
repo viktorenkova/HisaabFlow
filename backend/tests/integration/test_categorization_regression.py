@@ -45,7 +45,7 @@ class TestCategorizationRegression:
                 'Amount': -25.0,
                 'Title': 'Lidl Store Purchase',
                 'Note': 'Grocery shopping',
-                'Account': 'EURO Wise',
+                'Account': 'Wise EUR',
                 'Category': 'Expense',
                 '_source_bank': 'wise'
             },
@@ -129,7 +129,7 @@ class TestCategorizationRegression:
                 'Amount': -100.0,
                 'Title': 'Grocery shopping at Tesco',
                 'Currency': 'EUR',
-                'Account': 'Wise',  # Will be mapped to 'EURO Wise'
+                'Account': 'Wise',  # Will be mapped to 'Wise EUR'
                 'Category': 'Expense',
                 '_source_bank': 'wise'
             },

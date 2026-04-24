@@ -10,35 +10,172 @@ const streamPipeline = promisify(pipeline);
 class PythonBundlePreparator {
   constructor() {
     this.bundleDir = path.join(__dirname, '../python-bundle');
+    this.stagingBundleDir = path.join(__dirname, '../python-bundle.staging');
+    this.activeBundleDir = this.stagingBundleDir;
     this.platform = process.platform;
     this.arch = process.arch;
+    this.interactiveStdout = Boolean(process.stdout && process.stdout.isTTY);
     
     // python-build-standalone download URLs
     this.pythonVersion = '3.11.9';  // Latest stable 3.11.x
     this.buildVersion = '20240415'; // python-build-standalone release date
+    this.metadataFileName = '.bundle-metadata.json';
+    this.requiredModules = [
+      'fastapi',
+      'uvicorn',
+      'pydantic',
+      'pandas',
+      'pytest',
+      'httpx',
+      'requests',
+      'openpyxl',
+      'xlrd',
+      'chardet',
+      'multipart'
+    ];
+  }
+
+  writeProgress(message, forceNewline = false) {
+    if (!this.interactiveStdout || !process.stdout || process.stdout.destroyed) {
+      return;
+    }
+
+    try {
+      process.stdout.write(forceNewline ? `${message}\n` : message);
+    } catch (error) {
+      if (error && error.code !== 'EPIPE') {
+        throw error;
+      }
+    }
   }
 
   async preparePythonBundle() {
     console.log(' Preparing Python runtime bundle with python-build-standalone...');
     
     try {
-      // Clean previous bundle
-      if (fs.existsSync(this.bundleDir)) {
-        fs.rmSync(this.bundleDir, { recursive: true, force: true });
+      if (await this.isExistingBundleReady()) {
+        this.writeBundleMetadata(this.bundleDir);
+        console.log('[SUCCESS] Existing Python bundle already matches required runtime and test dependencies');
+        return true;
       }
-      fs.mkdirSync(this.bundleDir, { recursive: true });
+
+      // Build into a staging directory first so a failed refresh doesn't destroy
+      // the last known-good local bundle.
+      if (fs.existsSync(this.stagingBundleDir)) {
+        fs.rmSync(this.stagingBundleDir, { recursive: true, force: true });
+      }
+      fs.mkdirSync(this.stagingBundleDir, { recursive: true });
 
       // Download and setup portable Python for current platform
       await this.downloadPortablePython();
       
       // Install dependencies
       await this.installDependencies();
+
+      this.finalizeBundle();
       
       console.log('[SUCCESS] Python bundle prepared successfully');
       return true;
       
     } catch (error) {
       console.error('[ERROR]  Failed to prepare Python bundle:', error);
+      if (fs.existsSync(this.stagingBundleDir)) {
+        fs.rmSync(this.stagingBundleDir, { recursive: true, force: true });
+      }
+      return false;
+    }
+  }
+
+  finalizeBundle() {
+    if (fs.existsSync(this.bundleDir)) {
+      fs.rmSync(this.bundleDir, { recursive: true, force: true });
+    }
+    fs.renameSync(this.stagingBundleDir, this.bundleDir);
+    this.writeBundleMetadata(this.bundleDir);
+  }
+
+  getExpectedMetadata() {
+    return {
+      pythonVersion: this.pythonVersion,
+      buildVersion: this.buildVersion,
+      platform: this.platform,
+      arch: this.arch,
+      requiredModules: this.requiredModules
+    };
+  }
+
+  getMetadataPath(bundleRoot = this.activeBundleDir) {
+    return path.join(bundleRoot, this.metadataFileName);
+  }
+
+  readBundleMetadata(bundleRoot = this.bundleDir) {
+    const metadataPath = this.getMetadataPath(bundleRoot);
+    if (!fs.existsSync(metadataPath)) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+    } catch (error) {
+      console.warn(`[WARNING] Failed to read bundle metadata at ${metadataPath}: ${error.message}`);
+      return null;
+    }
+  }
+
+  writeBundleMetadata(bundleRoot = this.activeBundleDir) {
+    const metadataPath = this.getMetadataPath(bundleRoot);
+    fs.writeFileSync(metadataPath, JSON.stringify(this.getExpectedMetadata(), null, 2), 'utf8');
+  }
+
+  isMetadataCompatible(metadata) {
+    if (!metadata) {
+      return false;
+    }
+
+    const expected = this.getExpectedMetadata();
+    return (
+      metadata.pythonVersion === expected.pythonVersion &&
+      metadata.buildVersion === expected.buildVersion &&
+      metadata.platform === expected.platform &&
+      metadata.arch === expected.arch
+    );
+  }
+
+  async isExistingBundleReady() {
+    if (!fs.existsSync(this.bundleDir)) {
+      return false;
+    }
+
+    const pythonPath = this.getPythonExecutable(this.bundleDir);
+    if (!fs.existsSync(pythonPath)) {
+      return false;
+    }
+
+    const metadata = this.readBundleMetadata(this.bundleDir);
+    if (metadata && !this.isMetadataCompatible(metadata)) {
+      console.log('[INFO] Existing Python bundle metadata does not match the expected runtime, refreshing bundle...');
+      return false;
+    }
+
+    try {
+      const versionResult = await this.runCommand(pythonPath, ['--version']);
+      const versionOutput = `${versionResult.stdout} ${versionResult.stderr}`.trim();
+      if (!versionOutput.includes(this.pythonVersion)) {
+        console.log(`[INFO] Existing Python bundle version mismatch: ${versionOutput}`);
+        return false;
+      }
+
+      const moduleCheckScript = [
+        'import importlib',
+        `required = ${JSON.stringify(this.requiredModules)}`,
+        'missing = [name for name in required if importlib.import_module(name) is None]',
+        'print("ok")'
+      ].join('; ');
+
+      await this.runCommand(pythonPath, ['-c', moduleCheckScript]);
+      return true;
+    } catch (error) {
+      console.log(`[INFO] Existing Python bundle validation failed, refreshing bundle... (${error.message})`);
       return false;
     }
   }
@@ -48,7 +185,7 @@ class PythonBundlePreparator {
     
     const downloadUrl = this.getPythonDownloadUrl();
     const fileName = path.basename(new URL(downloadUrl).pathname);
-    const downloadPath = path.join(this.bundleDir, fileName);
+    const downloadPath = path.join(this.activeBundleDir, fileName);
     
     console.log(`⬇ Downloading: ${downloadUrl}`);
     await this.downloadFile(downloadUrl, downloadPath);
@@ -90,7 +227,7 @@ class PythonBundlePreparator {
   }
 
   async extractPythonBundle(tarPath) {
-    const extractDir = path.join(this.bundleDir, 'python');
+    const extractDir = path.join(this.activeBundleDir, 'python');
     fs.mkdirSync(extractDir, { recursive: true });
     
     if (this.platform === 'win32') {
@@ -140,7 +277,7 @@ class PythonBundlePreparator {
   async installPip(pythonPath) {
     // Download get-pip.py
     const getPipUrl = 'https://bootstrap.pypa.io/get-pip.py';
-    const getPipPath = path.join(this.bundleDir, 'get-pip.py');
+    const getPipPath = path.join(this.activeBundleDir, 'get-pip.py');
     
     await this.downloadFile(getPipUrl, getPipPath);
     await this.runCommand(pythonPath, [getPipPath]);
@@ -150,8 +287,8 @@ class PythonBundlePreparator {
     console.log('[SUCCESS] pip installed');
   }
 
-  getPythonExecutable() {
-    const pythonDir = path.join(this.bundleDir, 'python');
+  getPythonExecutable(bundleRoot = this.activeBundleDir) {
+    const pythonDir = path.join(bundleRoot, 'python');
     
     if (this.platform === 'win32') {
       return path.join(pythonDir, 'python.exe');
@@ -190,13 +327,13 @@ class PythonBundlePreparator {
           downloadedSize += chunk.length;
           if (totalSize) {
             const percent = Math.round((downloadedSize / totalSize) * 100);
-            process.stdout.write(`\r[DATA] Progress: ${percent}% (${Math.round(downloadedSize / 1024 / 1024)}MB)`);
+            this.writeProgress(`\r[DATA] Progress: ${percent}% (${Math.round(downloadedSize / 1024 / 1024)}MB)`);
           }
         });
         
         streamPipeline(response, file)
           .then(() => {
-            if (totalSize) process.stdout.write('\n');
+            if (totalSize) this.writeProgress('', true);
             resolve();
           })
           .catch(reject);

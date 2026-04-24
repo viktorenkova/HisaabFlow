@@ -37,7 +37,12 @@
     "dist:all": "npm run build && electron-builder --mac --win --linux --publish never",
     "dist:linux": "npm run build && electron-builder --linux --publish never",
     "dist:mac": "npm run build && electron-builder --mac --publish never",
-    "dist:win": "npm run build && electron-builder --win --publish never"
+    "dist:win": "npm run bundle-python && npm run build && electron-builder --win --publish never",
+    "verify:release:win": "powershell -ExecutionPolicy Bypass -File scripts/windows-release-gate.ps1",
+    "verify:release:win:build": "powershell -ExecutionPolicy Bypass -File scripts/windows-release-gate.ps1 -Build",
+    "verify:installer:win": "powershell -ExecutionPolicy Bypass -File scripts/windows-installer-gate.ps1",
+    "verify:installer:win:build": "powershell -ExecutionPolicy Bypass -File scripts/windows-installer-gate.ps1 -Build",
+    "verify:stage1:win": "powershell -ExecutionPolicy Bypass -File scripts/windows-installer-gate.ps1 -Build"
   },
   "build": {
     "appId": "com.hisaabflow.app",

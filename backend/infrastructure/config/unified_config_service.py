@@ -111,7 +111,7 @@ class UnifiedConfigService:
     
     def __init__(self, config_dir: str = None):
         """Initialize with config directory"""
-        self.config_dir = self._resolve_config_dir(config_dir)
+        self.config_dir = resolve_config_dir(config_dir)
         self._app_config: Optional[configparser.ConfigParser] = None
         self._bank_configs: Dict[str, UnifiedBankConfig] = {}
         self._detection_patterns: Dict[str, BankDetectionInfo] = {}
@@ -123,27 +123,6 @@ class UnifiedConfigService:
         self._configs_loaded = True
         
         print(f"[BUILD] [UnifiedConfigService] Initialized with {len(self._detection_patterns)} bank detection patterns")
-    
-    def _resolve_config_dir(self, config_dir: Optional[str]) -> str:
-        """Resolve configuration directory path"""
-        if config_dir:
-            return config_dir
-            
-        # Try to get config directory through utility function first
-        try:
-            from backend.infrastructure.csv_parsing.utils import get_config_dir_for_manager
-            user_config_dir = get_config_dir_for_manager()
-            if user_config_dir:
-                return user_config_dir
-        except ImportError:
-            pass
-        
-        # Default: project_root/configs
-        # From backend/shared/config/ go up to project root
-        current_dir = os.path.dirname(os.path.abspath(__file__))  # backend/shared/config/
-        backend_dir = os.path.dirname(os.path.dirname(current_dir))  # backend/
-        project_root = os.path.dirname(backend_dir)  # project root
-        return os.path.join(project_root, 'configs')
     
     # ========== App Configuration ==========
     
@@ -879,6 +858,7 @@ class UnifiedConfigService:
             # Clear both caches
             self._bank_configs.clear()
             self._detection_patterns.clear()
+            self._load_app_config()
             
             # Rebuild detection index
             self._build_detection_index()
@@ -1054,13 +1034,41 @@ class UnifiedConfigService:
 _unified_config_service: Optional[UnifiedConfigService] = None
 
 
+def resolve_config_dir(config_dir: Optional[str] = None) -> str:
+    """Resolve the effective configuration directory for the current process."""
+    if config_dir:
+        return os.path.abspath(config_dir)
+
+    try:
+        from backend.infrastructure.csv_parsing.utils import get_config_dir_for_manager
+
+        user_config_dir = get_config_dir_for_manager()
+        if user_config_dir:
+            return os.path.abspath(user_config_dir)
+    except ImportError:
+        pass
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    backend_dir = os.path.dirname(os.path.dirname(current_dir))
+    project_root = os.path.dirname(backend_dir)
+    return os.path.join(project_root, "configs")
+
+
 def get_unified_config_service(config_dir: str = None) -> UnifiedConfigService:
-    """Get singleton instance of unified config service"""
+    """Get singleton instance of unified config service."""
     global _unified_config_service
-    
+
+    resolved_config_dir = resolve_config_dir(config_dir)
+
     if _unified_config_service is None:
-        _unified_config_service = UnifiedConfigService(config_dir)
-    
+        _unified_config_service = UnifiedConfigService(resolved_config_dir)
+    elif os.path.abspath(_unified_config_service.config_dir) != resolved_config_dir:
+        print(
+            "[INFO] [UnifiedConfigService] Reinitializing singleton for config_dir change: "
+            f"{_unified_config_service.config_dir} -> {resolved_config_dir}"
+        )
+        _unified_config_service = UnifiedConfigService(resolved_config_dir)
+
     return _unified_config_service
 
 
