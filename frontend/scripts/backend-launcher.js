@@ -10,6 +10,7 @@ class BackendLauncher {
     this.userDir = userDir;
     this.backendPid = null; // Track PID separately for Windows
     this.backendExecutableName = null; // Track executable name
+    this.lastStartupError = null;
   }
 
   getBackendExecutable() {
@@ -75,11 +76,13 @@ class BackendLauncher {
       // Wait for backend to be ready
       await this.waitForBackend();
       this.isRunning = true;
+      this.lastStartupError = null;
       
       console.log('[SUCCESS] Compiled backend started successfully');
       return true;
       
     } catch (error) {
+      this.lastStartupError = error;
       console.error('[ERROR]  Failed to start compiled backend:', error);
       return false;
     }
@@ -97,13 +100,13 @@ class BackendLauncher {
     if (backendExe && require('fs').existsSync(backendExe)) {
       return this.startCompiledBackend(backendExe);
     } else {
-      // Fall back to Python approach (development only)
+      console.log(`[WARNING] Compiled backend executable not found, falling back to bundled Python backend: ${backendExe}`);
       return this.startPythonBackend();
     }
   }
 
   async startPythonBackend() {
-    console.log(' Using Python backend approach (development mode)');
+    console.log(' Using bundled Python backend approach');
     
     try {
       const backendPath = this.getBackendPath();
@@ -170,6 +173,7 @@ class BackendLauncher {
       return true;
       
     } catch (error) {
+      this.lastStartupError = error;
       console.error('[ERROR]  Failed to start Python backend:', error);
       return false;
     }
@@ -206,19 +210,35 @@ class BackendLauncher {
     });
   }
 
-  async waitForBackend(maxAttempts = 30) {
+  async waitForBackend(maxAttempts = 90) {
     const axios = require('axios');
     
     for (let i = 0; i < maxAttempts; i++) {
       try {
-        await axios.get(`http://127.0.0.1:${this.port}/health`);
+        const response = await axios.get(`http://127.0.0.1:${this.port}/health`);
+        const health = response.data || {};
+
+        if (health.status !== 'healthy' || health.routers_available === false) {
+          const error = new Error(
+            health.detail || 'Backend started without required API routes'
+          );
+          error.nonRetryable = true;
+          throw error;
+        }
+
         return true;
       } catch (error) {
+        if (error.nonRetryable) {
+          throw error;
+        }
+        if (!this.backendProcess) {
+          throw new Error('Backend process exited before becoming healthy');
+        }
         console.log(`⏳ Waiting for backend... (${i + 1}/${maxAttempts})`);
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-    throw new Error('Backend failed to start within timeout');
+    throw new Error(`Backend failed to start within ${maxAttempts} seconds`);
   }
 
   async tryHttpShutdown() {
@@ -689,6 +709,13 @@ class BackendLauncher {
 
   getBackendUrl() {
     return `http://127.0.0.1:${this.port}`;
+  }
+
+  getLastStartupErrorMessage() {
+    if (!this.lastStartupError) {
+      return null;
+    }
+    return this.lastStartupError.message || String(this.lastStartupError);
   }
 
   getBackendPid() {

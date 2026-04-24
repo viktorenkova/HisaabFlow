@@ -33,9 +33,11 @@ try:
     from backend.api.refund_endpoints import refund_router
     from backend.api.middleware import setup_logging_middleware
     ROUTERS_AVAILABLE = True
+    ROUTER_IMPORT_ERROR = None
 except ImportError as e:
     print(f"[WARNING]  Router import failed: {e}")
     ROUTERS_AVAILABLE = False
+    ROUTER_IMPORT_ERROR = str(e)
     config_router = None
     file_router = None
     parse_router = None
@@ -105,7 +107,12 @@ async def root():
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
-    return {"status": "healthy", "version": "3.0.0"}
+    return {
+        "status": "healthy" if ROUTERS_AVAILABLE else "degraded",
+        "version": "3.0.0",
+        "routers_available": ROUTERS_AVAILABLE,
+        "detail": None if ROUTERS_AVAILABLE else f"Required API routers failed to load: {ROUTER_IMPORT_ERROR}",
+    }
 
 @app.post("/shutdown")
 async def shutdown_server():

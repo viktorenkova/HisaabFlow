@@ -251,6 +251,8 @@ class ExportResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+    routers_available: bool
+    detail: Optional[str] = None
 
 
 class RefundAnalysisOptions(BaseModel):

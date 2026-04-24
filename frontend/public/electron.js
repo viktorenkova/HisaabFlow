@@ -121,6 +121,15 @@ async function createWindow() {
   
   if (!backendStarted) {
     console.error('[ERROR]  Failed to start backend - app may not work correctly');
+    const startupError = backendLauncher.getLastStartupErrorMessage();
+    dialog.showErrorBox(
+      'HisaabFlow backend failed to start',
+      startupError
+        ? `Backend did not become ready.\n\nDetails: ${startupError}`
+        : 'Backend did not become ready. File upload and statement analysis are unavailable.'
+    );
+    app.quit();
+    return;
   }
 
   mainWindow = new BrowserWindow({
