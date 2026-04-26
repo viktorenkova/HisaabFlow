@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { pathToFileURL } = require('url');
 const isDev = require('electron-is-dev');
 const BackendLauncher = require('../scripts/backend-launcher');
 
@@ -144,11 +145,13 @@ async function createWindow() {
     }
   });
 
-  mainWindow.loadURL(
-    isDev
-      ? 'http://localhost:3000'
-      : `file://${path.join(__dirname, '../build/index.html')}`
-  );
+  const backendUrl = backendLauncher.getBackendUrl();
+  const encodedBackendUrl = encodeURIComponent(backendUrl);
+  const appUrl = isDev
+    ? `http://localhost:3000?backendUrl=${encodedBackendUrl}`
+    : `${pathToFileURL(path.join(__dirname, '../build/index.html')).toString()}?backendUrl=${encodedBackendUrl}`;
+
+  mainWindow.loadURL(appUrl);
 
   if (isDev) {
     mainWindow.webContents.openDevTools();
@@ -193,7 +196,7 @@ async function createWindow() {
   // Provide backend URL to frontend
   mainWindow.webContents.on('dom-ready', () => {
     mainWindow.webContents.executeJavaScript(`
-      window.BACKEND_URL = '${backendLauncher.getBackendUrl()}';
+      window.BACKEND_URL = '${backendUrl}';
       console.log(' Backend URL configured:', window.BACKEND_URL);
     `);
   });

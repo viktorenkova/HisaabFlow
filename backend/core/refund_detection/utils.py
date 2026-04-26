@@ -13,7 +13,15 @@ EMAIL_REGEX = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 def normalize_text(value: object) -> str:
     text = "" if value is None else str(value)
-    return " ".join(text.replace("\xa0", " ").replace("\n", " ").replace("\r", " ").strip().lower().replace("ё", "е").split())
+    return " ".join(
+        text.replace("\xa0", " ")
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .strip()
+        .lower()
+        .replace("ё", "е")
+        .split()
+    )
 
 
 def clean_account_number(value: object) -> str:
@@ -111,11 +119,12 @@ def read_csv_rows(file_path: str) -> pd.DataFrame:
 
 
 def find_row_by_keywords(rows: Iterable[List[object]], keyword_groups: List[str], max_rows: int = 30) -> Optional[int]:
+    normalized_keywords = [normalize_text(keyword) for keyword in keyword_groups]
     for index, row in enumerate(rows, start=1):
         if index > max_rows:
             return None
         cells = [normalize_text(cell) for cell in row]
-        if all(any(keyword in cell for cell in cells) for keyword in keyword_groups):
+        if all(any(keyword in cell for cell in cells) for keyword in normalized_keywords):
             return index
     return None
 

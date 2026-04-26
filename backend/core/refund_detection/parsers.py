@@ -17,6 +17,42 @@ from .utils import (
 )
 
 
+SBER_BUSINESS_HEADER_KEYWORDS = [
+    "Дата проводки",
+    "Сумма по дебету",
+    "Сумма по кредиту",
+    "Назначение платежа",
+]
+
+ACCOUNT_STATEMENT_HEADER_KEYWORDS = [
+    "Дата",
+    "Дебет",
+    "Кредит",
+    "Назначение платежа",
+]
+
+
+def _open_workbook_with_resolved_sheet(file_path: str, resolver):
+    """
+    Prefer streaming mode for performance, but retry with the standard reader
+    when the expected table is not visible. Some bank-exported XLSX files
+    expose incomplete rows in openpyxl's read_only mode.
+    """
+    for read_only in (True, False):
+        workbook = load_workbook(file_path, read_only=read_only, data_only=True)
+        try:
+            worksheet, header_row = resolver(workbook)
+            if worksheet is not None and header_row is not None:
+                return workbook, worksheet, header_row
+        except Exception:
+            workbook.close()
+            raise
+
+        workbook.close()
+
+    return None, None, None
+
+
 class BaseStatementParser(ABC):
     parser_name = "base"
     bank_name = "unknown"
@@ -40,27 +76,21 @@ class SberBusinessParser(BaseStatementParser):
         if Path(file_path).suffix.lower() not in {".xlsx", ".xlsm", ".xls"}:
             return False
 
-        workbook = load_workbook(file_path, read_only=True, data_only=True)
+        workbook, _, _ = _open_workbook_with_resolved_sheet(file_path, self._resolve_sheet)
+        if workbook is None:
+            return False
         try:
-            for worksheet in workbook.worksheets:
-                header_row = find_row_by_keywords(
-                    worksheet.iter_rows(min_row=1, max_row=20, values_only=True),
-                    ["дата проводки", "сумма по дебету", "сумма по кредиту", "назначение платежа"],
-                )
-                if header_row:
-                    return True
+            return True
         finally:
             workbook.close()
-        return False
 
     def parse(self, file_path: str, original_name: str) -> List[NormalizedTransaction]:
-        workbook = load_workbook(file_path, read_only=True, data_only=True)
+        workbook, worksheet, header_row = _open_workbook_with_resolved_sheet(file_path, self._resolve_sheet)
+        if workbook is None or worksheet is None or header_row is None:
+            raise ValueError(f"Could not locate SberBusiness table in {original_name}")
+
         transactions: List[NormalizedTransaction] = []
         try:
-            worksheet, header_row = self._resolve_sheet(workbook)
-            if worksheet is None or header_row is None:
-                raise ValueError(f"Could not locate SberBusiness table in {original_name}")
-
             headers = [str(cell or "").strip() for cell in next(worksheet.iter_rows(min_row=header_row, max_row=header_row, values_only=True))]
             indexes = self._map_indexes(headers)
             account_number = clean_account_number(worksheet.title)
@@ -103,7 +133,7 @@ class SberBusinessParser(BaseStatementParser):
         for worksheet in workbook.worksheets:
             header_row = find_row_by_keywords(
                 worksheet.iter_rows(min_row=1, max_row=20, values_only=True),
-                ["дата проводки", "сумма по дебету", "сумма по кредиту", "назначение платежа"],
+                SBER_BUSINESS_HEADER_KEYWORDS,
             )
             if header_row:
                 return worksheet, header_row
@@ -141,27 +171,21 @@ class AccountStatementParser(BaseStatementParser):
         if Path(file_path).suffix.lower() not in {".xlsx", ".xlsm", ".xls"}:
             return False
 
-        workbook = load_workbook(file_path, read_only=True, data_only=True)
+        workbook, _, _ = _open_workbook_with_resolved_sheet(file_path, self._resolve_sheet)
+        if workbook is None:
+            return False
         try:
-            for worksheet in workbook.worksheets:
-                header_row = find_row_by_keywords(
-                    worksheet.iter_rows(min_row=1, max_row=25, values_only=True),
-                    ["дата", "дебет", "кредит", "назначение платежа"],
-                )
-                if header_row:
-                    return True
+            return True
         finally:
             workbook.close()
-        return False
 
     def parse(self, file_path: str, original_name: str) -> List[NormalizedTransaction]:
-        workbook = load_workbook(file_path, read_only=True, data_only=True)
+        workbook, worksheet, header_row = _open_workbook_with_resolved_sheet(file_path, self._resolve_sheet)
+        if workbook is None or worksheet is None or header_row is None:
+            raise ValueError(f"Could not locate account statement table in {original_name}")
+
         transactions: List[NormalizedTransaction] = []
         try:
-            worksheet, header_row = self._resolve_sheet(workbook)
-            if worksheet is None or header_row is None:
-                raise ValueError(f"Could not locate account statement table in {original_name}")
-
             top_headers = [str(cell or "").strip() for cell in next(worksheet.iter_rows(min_row=header_row, max_row=header_row, values_only=True))]
             sub_headers = [str(cell or "").strip() for cell in next(worksheet.iter_rows(min_row=header_row + 1, max_row=header_row + 1, values_only=True))]
             headers = self._combine_headers(top_headers, sub_headers)
@@ -207,7 +231,7 @@ class AccountStatementParser(BaseStatementParser):
         for worksheet in workbook.worksheets:
             header_row = find_row_by_keywords(
                 worksheet.iter_rows(min_row=1, max_row=25, values_only=True),
-                ["дата", "дебет", "кредит", "назначение платежа"],
+                ACCOUNT_STATEMENT_HEADER_KEYWORDS,
             )
             if header_row:
                 return worksheet, header_row

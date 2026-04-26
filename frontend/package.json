@@ -42,7 +42,7 @@
     "verify:release:win:build": "powershell -ExecutionPolicy Bypass -File scripts/windows-release-gate.ps1 -Build",
     "verify:installer:win": "powershell -ExecutionPolicy Bypass -File scripts/windows-installer-gate.ps1",
     "verify:installer:win:build": "powershell -ExecutionPolicy Bypass -File scripts/windows-installer-gate.ps1 -Build",
-    "verify:stage1:win": "powershell -ExecutionPolicy Bypass -File scripts/windows-installer-gate.ps1 -Build"
+    "verify:stage1:win": "powershell -ExecutionPolicy Bypass -File scripts/windows-stage1-gate.ps1"
   },
   "build": {
     "appId": "com.hisaabflow.app",

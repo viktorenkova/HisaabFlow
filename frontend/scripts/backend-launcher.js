@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const net = require('net');
 
 class BackendLauncher {
   constructor(userDir = null) {
@@ -80,10 +81,65 @@ class BackendLauncher {
     return this.startPythonBackend();
   }
 
+  async isPortAvailable(port) {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+
+      server.once('error', () => {
+        resolve(false);
+      });
+
+      server.once('listening', () => {
+        server.close(() => resolve(true));
+      });
+
+      server.listen({
+        host: '127.0.0.1',
+        port,
+        exclusive: true
+      });
+    });
+  }
+
+  async findAvailablePort(preferredPort = 8000, attempts = 50) {
+    for (let offset = 0; offset < attempts; offset++) {
+      const candidatePort = preferredPort + offset;
+      if (await this.isPortAvailable(candidatePort)) {
+        return candidatePort;
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      const server = net.createServer();
+
+      server.once('error', reject);
+      server.once('listening', () => {
+        const address = server.address();
+        const selectedPort = address && address.port;
+        server.close(() => {
+          if (selectedPort) {
+            resolve(selectedPort);
+          } else {
+            reject(new Error('Could not resolve an available backend port'));
+          }
+        });
+      });
+
+      server.listen({
+        host: '127.0.0.1',
+        port: 0,
+        exclusive: true
+      });
+    });
+  }
+
   async startPythonBackend() {
     this.log('INFO', 'Using bundled Python backend startup path');
     
     try {
+      this.port = await this.findAvailablePort(this.port);
+      this.log('INFO', 'Selected backend port', { port: this.port });
+
       const backendPath = this.getBackendPath();
       const backendExists = fs.existsSync(backendPath);
       this.log('INFO', 'Resolved backend path', { backendPath, exists: backendExists });

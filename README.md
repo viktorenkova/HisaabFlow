@@ -85,6 +85,7 @@ This refreshes the embedded Python bundle when needed, builds the Windows packag
 The stage-1 run now also writes machine-readable reports to:
 
 ```bash
+.release-gate/windows-stage1-gate-report.json
 .release-gate/windows-installer-gate-report.json
 .release-gate/windows-release-installed-report.json
 ```

@@ -1,7 +1,7 @@
 import axios from 'axios';
+import { getApiV1Base } from './apiConfig';
 
-const API_BASE = window.BACKEND_URL || 'http://127.0.0.1:8000';
-const API_V1_BASE = `${API_BASE}/api/v1`;
+const API_V1_BASE = getApiV1Base();
 
 export class RefundAnalysisService {
   static async uploadFile(file) {
