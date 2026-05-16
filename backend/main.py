@@ -3,7 +3,9 @@
 Bank Statement Parser - Clean Configuration-Based Backend
 Lightweight entry point with modular API components
 """
-from fastapi import FastAPI, APIRouter
+from typing import Optional
+
+from fastapi import FastAPI, APIRouter, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
@@ -15,6 +17,8 @@ try:
 except Exception:
     pass
  
+BACKEND_INSTANCE_TOKEN = os.environ.get("HISAABFLOW_BACKEND_TOKEN")
+
 # Add project root to path for consistent absolute imports
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
@@ -112,13 +116,17 @@ async def health_check():
         "version": "3.0.0",
         "routers_available": ROUTERS_AVAILABLE,
         "detail": None if ROUTERS_AVAILABLE else f"Required API routers failed to load: {ROUTER_IMPORT_ERROR}",
+        "instance_token": BACKEND_INSTANCE_TOKEN,
     }
 
 @app.post("/shutdown")
-async def shutdown_server():
+async def shutdown_server(x_hisaabflow_token: Optional[str] = Header(default=None)):
     """Graceful shutdown endpoint for desktop app cleanup"""
     import asyncio
     import threading
+
+    if BACKEND_INSTANCE_TOKEN and x_hisaabflow_token != BACKEND_INSTANCE_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid backend shutdown token")
     
     def shutdown():
         print("[SHUTDOWN] Graceful shutdown requested via API")

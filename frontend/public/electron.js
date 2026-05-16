@@ -8,6 +8,22 @@ const BackendLauncher = require('../scripts/backend-launcher');
 
 let mainWindow;
 let backendLauncher;
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) {
+      return;
+    }
+
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+  });
+}
 
 // Setup user directory with configs and sample data
 async function setupUserDirectory() {
@@ -202,7 +218,9 @@ async function createWindow() {
   });
 }
 
-app.on('ready', createWindow);
+if (gotSingleInstanceLock) {
+  app.on('ready', createWindow);
+}
 
 app.on('window-all-closed', async () => {
   console.log('[CLEANUP] All windows closed, cleaning up...');

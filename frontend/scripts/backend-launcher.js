@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const net = require('net');
+const crypto = require('crypto');
 
 class BackendLauncher {
   constructor(userDir = null) {
@@ -15,7 +16,16 @@ class BackendLauncher {
     this.lastStartupError = null;
     this.launchLogPath = null;
     this.backendLogPath = null;
+    this.launchToken = this.createLaunchToken();
     this.initializeLogging();
+  }
+
+  createLaunchToken() {
+    if (crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+
+    return crypto.randomBytes(16).toString('hex');
   }
 
   initializeLogging() {
@@ -171,7 +181,8 @@ class BackendLauncher {
         PYTHONPATH: backendPath,
         // Force UTF-8 encoding for cross-platform compatibility
         PYTHONUTF8: '1',
-        PYTHONIOENCODING: 'utf-8'
+        PYTHONIOENCODING: 'utf-8',
+        HISAABFLOW_BACKEND_TOKEN: this.launchToken
       };
       
       if (this.userDir) {
@@ -269,6 +280,20 @@ class BackendLauncher {
           throw error;
         }
 
+        if (!this.backendProcess || this.backendProcess.exitCode !== null || this.backendProcess.signalCode !== null) {
+          throw new Error('Backend process exited before becoming healthy');
+        }
+
+        if (health.instance_token !== this.launchToken) {
+          this.log('WARN', 'Health check reached a different backend instance', {
+            expectedToken: this.launchToken,
+            receivedToken: health.instance_token || null,
+            port: this.port
+          });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+
         return true;
       } catch (error) {
         if (error.nonRetryable) {
@@ -291,7 +316,10 @@ class BackendLauncher {
       // Send shutdown request with short timeout
       const response = await axios.post(`http://127.0.0.1:${this.port}/shutdown`, {}, {
         timeout: 2000,
-        headers: { 'Content-Type': 'application/json' }
+        headers: {
+          'Content-Type': 'application/json',
+          'X-HisaabFlow-Token': this.launchToken
+        }
       });
       
       this.log('INFO', 'Shutdown request sent', { response: response.data });

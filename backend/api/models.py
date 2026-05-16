@@ -253,6 +253,7 @@ class HealthResponse(BaseModel):
     version: str
     routers_available: bool
     detail: Optional[str] = None
+    instance_token: Optional[str] = None
 
 
 class RefundAnalysisOptions(BaseModel):

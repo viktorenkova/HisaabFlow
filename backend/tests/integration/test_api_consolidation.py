@@ -39,6 +39,19 @@ class TestAPIConsolidationBefore:
         data = response.json()
         assert data["status"] == "healthy"
 
+    def test_shutdown_rejects_wrong_backend_token(self, client, monkeypatch):
+        """Desktop shutdown must not stop a backend owned by another app instance."""
+        import backend.main as main_module
+
+        monkeypatch.setattr(main_module, "BACKEND_INSTANCE_TOKEN", "expected-token")
+
+        response = client.post(
+            "/shutdown",
+            headers={"X-HisaabFlow-Token": "wrong-token"},
+        )
+
+        assert response.status_code == 403
+
     def test_api_v1_configs_endpoint(self, client):
         """Test /api/v1/configs endpoint."""
         response = client.get("/api/v1/configs")
