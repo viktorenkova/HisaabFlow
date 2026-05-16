@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import datetime
 from io import BytesIO
@@ -18,7 +19,11 @@ DEFAULT_REFUND_PHRASES = [
     "возврат оплаты по договору",
     "возврат оплат по договору",
     "возврат по договору",
+    "Оплата услуг по лоту № (любое цифровое значение)",
 ]
+
+LOT_PAYMENT_PHRASE = normalize_text("Оплата услуг по лоту № (любое цифровое значение)")
+LOT_PAYMENT_PATTERN = re.compile(r"\bоплата\s+услуг\s+по\s+лоту\s*№\s*\d+\b")
 
 
 class RefundReportService:
@@ -227,12 +232,16 @@ class RefundReportService:
         if not normalized_purpose:
             return False
         phrase_match = any(normalize_text(phrase) in normalized_purpose for phrase in phrases)
+        lot_payment_match = (
+            any(normalize_text(phrase) == LOT_PAYMENT_PHRASE for phrase in phrases)
+            and bool(LOT_PAYMENT_PATTERN.search(normalized_purpose))
+        )
         heuristic_match = (
             "возврат" in normalized_purpose
             and "договор" in normalized_purpose
             and ("оплат" in normalized_purpose or "платеж" in normalized_purpose)
         )
-        return phrase_match or heuristic_match
+        return phrase_match or lot_payment_match or heuristic_match
 
     def _build_summary(
         self,

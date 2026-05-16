@@ -1,9 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 
 import AppHeader from '../components/layout/AppHeader';
 import { Badge, Button, Card } from '../components/ui';
-import { Download, FileText, Upload, X } from '../components/ui/Icons';
+import { Check, Download, FileText, Upload, X } from '../components/ui/Icons';
 import { useTheme } from '../theme/ThemeProvider';
 import { RefundAnalysisService } from '../services/refundAnalysisService';
 
@@ -11,9 +11,29 @@ const DEFAULT_PHRASES = [
   'Возврат оплаты по договору',
   'Возврат оплат по договору',
   'Возврат по договору',
+  'Оплата услуг по лоту № (любое цифровое значение)',
 ];
 
 const acceptedExtensions = ['.xlsx', '.xls', '.csv'];
+
+const parsePhrasesText = (value) => value
+  .split('\n')
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+const mergePhrases = (...phraseGroups) => {
+  const merged = [];
+  const seen = new Set();
+  phraseGroups.flat().forEach((phrase) => {
+    const normalized = String(phrase).trim().replace(/\s+/g, ' ');
+    const key = normalized.toLocaleLowerCase('ru-RU');
+    if (normalized && !seen.has(key)) {
+      merged.push(normalized);
+      seen.add(key);
+    }
+  });
+  return merged;
+};
 
 function RefundAppLogic() {
   const theme = useTheme();
@@ -24,28 +44,60 @@ function RefundAppLogic() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [customPhraseText, setCustomPhraseText] = useState('');
+  const [phraseSettingsLoading, setPhraseSettingsLoading] = useState(true);
+  const [phraseSettingsSaving, setPhraseSettingsSaving] = useState(false);
   const [options, setOptions] = useState({
     enable_amount_multiple: true,
     amount_multiple: 5000,
     enable_email: true,
     enable_refund_phrase: true,
-    refund_phrases_text: DEFAULT_PHRASES.join('\n'),
     match_mode: 'any',
     outgoing_only: true,
   });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPhraseSettings = async () => {
+      try {
+        const settings = await RefundAnalysisService.getPhraseSettings();
+        if (isMounted) {
+          setCustomPhraseText((settings.custom_phrases || []).join('\n'));
+        }
+      } catch {
+        if (isMounted) {
+          toast.error('Не удалось загрузить сохраненные формулировки.');
+        }
+      } finally {
+        if (isMounted) {
+          setPhraseSettingsLoading(false);
+        }
+      }
+    };
+
+    loadPhraseSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const customPhrases = useMemo(() => parsePhrasesText(customPhraseText), [customPhraseText]);
+  const activeRefundPhrases = useMemo(
+    () => mergePhrases(DEFAULT_PHRASES, customPhrases),
+    [customPhrases]
+  );
 
   const parsedOptions = useMemo(() => ({
     enable_amount_multiple: options.enable_amount_multiple,
     amount_multiple: Number(options.amount_multiple) || 0,
     enable_email: options.enable_email,
     enable_refund_phrase: options.enable_refund_phrase,
-    refund_phrases: options.refund_phrases_text
-      .split('\n')
-      .map((item) => item.trim())
-      .filter(Boolean),
+    refund_phrases: activeRefundPhrases,
     match_mode: options.match_mode,
     outgoing_only: options.outgoing_only,
-  }), [options]);
+  }), [options, activeRefundPhrases]);
 
   const uploadFiles = async (fileList) => {
     const validFiles = Array.from(fileList).filter((file) => {
@@ -155,6 +207,24 @@ function RefundAppLogic() {
     setOptions((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleSaveCustomPhrases = async () => {
+    setPhraseSettingsSaving(true);
+    setError(null);
+    try {
+      const settings = await RefundAnalysisService.savePhraseSettings(customPhrases);
+      setCustomPhraseText((settings.custom_phrases || []).join('\n'));
+      toast.success('Формулировки сохранены.');
+    } catch (requestError) {
+      setError(`Ошибка сохранения формулировок: ${requestError.response?.data?.detail || requestError.message}`);
+    } finally {
+      setPhraseSettingsSaving(false);
+    }
+  };
+
+  const handleClearCustomPhrases = () => {
+    setCustomPhraseText('');
+  };
+
   const metricCards = analysis ? [
     { label: 'Файлы', value: analysis.summary.processed_files, tone: 'primary' },
     { label: 'Совпадения', value: analysis.summary.matched_transactions, tone: 'success' },
@@ -235,6 +305,13 @@ function RefundAppLogic() {
     whiteSpace: 'normal',
     overflowWrap: 'anywhere',
     wordBreak: 'break-word',
+    minWidth: 0,
+  };
+
+  const phraseListStyle = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing.xs,
     minWidth: 0,
   };
 
@@ -413,14 +490,59 @@ function RefundAppLogic() {
                 Искать формулировки возврата
               </label>
 
-              <textarea
-                name="refund_phrases_text"
-                rows={6}
-                style={{ ...inputStyle, resize: 'vertical' }}
-                value={options.refund_phrases_text}
-                onChange={handleInputChange}
-                disabled={!options.enable_refund_phrase}
-              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.sm }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing.sm }}>
+                  <div style={{ fontWeight: 600, color: theme.colors.text.primary }}>Встроенные формулировки</div>
+                  <Badge variant="outline" size="small">{DEFAULT_PHRASES.length}</Badge>
+                </div>
+                <div style={phraseListStyle}>
+                  {DEFAULT_PHRASES.map((phrase) => (
+                    <Badge key={phrase} variant="outline" style={{ maxWidth: '100%', ...wrapTextStyle }}>
+                      {phrase}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.sm }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing.sm }}>
+                  <div style={{ fontWeight: 600, color: theme.colors.text.primary }}>Дополнительные формулировки</div>
+                  <Badge variant="outline" size="small">{customPhrases.length}</Badge>
+                </div>
+                <textarea
+                  rows={6}
+                  style={{ ...inputStyle, resize: 'vertical' }}
+                  value={customPhraseText}
+                  onChange={(event) => setCustomPhraseText(event.target.value)}
+                  disabled={!options.enable_refund_phrase || phraseSettingsLoading}
+                  placeholder="Каждая формулировка с новой строки"
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
+                  <div style={{ color: theme.colors.text.secondary, fontSize: '13px' }}>
+                    Активно формулировок: {activeRefundPhrases.length}
+                  </div>
+                  <div style={{ display: 'flex', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      onClick={handleClearCustomPhrases}
+                      disabled={phraseSettingsLoading || phraseSettingsSaving || customPhrases.length === 0}
+                    >
+                      Очистить список
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="small"
+                      onClick={handleSaveCustomPhrases}
+                      loading={phraseSettingsSaving}
+                      disabled={phraseSettingsLoading}
+                      leftIcon={<Check size={14} />}
+                    >
+                      Сохранить
+                    </Button>
+                  </div>
+                </div>
+              </div>
 
               <label style={{ display: 'flex', alignItems: 'center', gap: theme.spacing.sm, color: theme.colors.text.primary }}>
                 <input

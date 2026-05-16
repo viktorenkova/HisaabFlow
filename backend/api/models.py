@@ -266,10 +266,22 @@ class RefundAnalysisOptions(BaseModel):
             "Возврат оплаты по договору",
             "Возврат оплат по договору",
             "Возврат по договору",
+            "Оплата услуг по лоту № (любое цифровое значение)",
         ]
     )
     match_mode: Literal["any", "all"] = "any"
     outgoing_only: bool = True
+
+
+class RefundPhraseSettings(BaseModel):
+    default_phrases: List[str]
+    custom_phrases: List[str]
+    all_phrases: List[str]
+    storage_path: str
+
+
+class RefundPhraseSettingsUpdate(BaseModel):
+    custom_phrases: List[str] = Field(default_factory=list)
 
 
 class RefundAnalyzeRequest(BaseModel):

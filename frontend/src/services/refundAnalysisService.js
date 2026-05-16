@@ -30,6 +30,18 @@ export class RefundAnalysisService {
     return response.data;
   }
 
+  static async getPhraseSettings() {
+    const response = await axios.get(`${API_V1_BASE}/refunds/phrases`);
+    return response.data;
+  }
+
+  static async savePhraseSettings(customPhrases) {
+    const response = await axios.post(`${API_V1_BASE}/refunds/phrases`, {
+      custom_phrases: customPhrases,
+    });
+    return response.data;
+  }
+
   static async exportReport(analysis) {
     const response = await axios.post(
       `${API_V1_BASE}/refunds/export`,

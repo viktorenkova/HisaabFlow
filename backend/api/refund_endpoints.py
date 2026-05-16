@@ -7,12 +7,33 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.api.file_endpoints import get_uploaded_file
-from backend.api.models import RefundAnalysisResponse, RefundAnalyzeRequest, RefundExportRequest
-from backend.services.refund_report_service import RefundReportService
+from backend.api.models import (
+    RefundAnalysisResponse,
+    RefundAnalyzeRequest,
+    RefundExportRequest,
+    RefundPhraseSettings,
+    RefundPhraseSettingsUpdate,
+)
+from backend.services.refund_report_service import DEFAULT_REFUND_PHRASES, RefundReportService
+from backend.services.refund_phrase_settings_service import RefundPhraseSettingsService
 
 
 refund_router = APIRouter()
 refund_service = RefundReportService()
+phrase_settings_service = RefundPhraseSettingsService(DEFAULT_REFUND_PHRASES)
+
+
+@refund_router.get("/refunds/phrases", response_model=RefundPhraseSettings)
+async def get_refund_phrases():
+    return phrase_settings_service.get_settings()
+
+
+@refund_router.post("/refunds/phrases", response_model=RefundPhraseSettings)
+async def save_refund_phrases(request: RefundPhraseSettingsUpdate):
+    try:
+        return phrase_settings_service.save_settings(request.custom_phrases)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @refund_router.post("/refunds/analyze", response_model=RefundAnalysisResponse)
