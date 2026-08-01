@@ -282,10 +282,12 @@ class MigTorgCsvParser(BaseStatementParser):
     parser_name = "migtorg_csv"
     bank_name = "migtorg"
 
+    PROJECT_COLUMN_INDEX = 7  # H
+    OPERATION_TYPE_COLUMN_INDEX = 10  # K
+    REFUND_AMOUNT_COLUMN_INDEX = 21  # V
+    REFUND_PROJECT_NAME = "new.migtorg.com/dashboard"
+
     def can_handle(self, file_path: str, original_name: str) -> bool:
-        lower_name = original_name.lower()
-        if "migtorg" in lower_name:
-            return True
         if Path(file_path).suffix.lower() != ".csv":
             return False
         try:
@@ -293,20 +295,24 @@ class MigTorgCsvParser(BaseStatementParser):
         except Exception:
             return False
         headers = {header.lower().strip() for header in dataframe.columns}
-        return "operation_type" in headers and "amount / amount" in headers
+        return {
+            "project_name",
+            "operation_type",
+        }.issubset(headers) and len(dataframe.columns) > self.REFUND_AMOUNT_COLUMN_INDEX
 
     def parse(self, file_path: str, original_name: str) -> List[NormalizedTransaction]:
         dataframe = read_csv_rows(file_path)
         transactions: List[NormalizedTransaction] = []
         for _, row in dataframe.fillna("").iterrows():
-            raw_amount = parse_amount(row.get("amount / amount", 0))
-            currency = str(row.get("currency / currency", "") or row.get("real_currency / channel_currency", "")).strip().upper()
-            amount = raw_amount / 100 if currency == "RUB" and raw_amount >= 1000 else raw_amount
-            operation_type = str(row.get("operation_type", "")).strip()
-            direction = "outgoing" if any(token in operation_type.lower() for token in ["refund", "voucher", "payout"]) else "incoming"
+            project_name = str(row.iloc[self.PROJECT_COLUMN_INDEX]).strip()
+            operation_type = str(row.iloc[self.OPERATION_TYPE_COLUMN_INDEX]).strip()
+            if project_name.lower() != self.REFUND_PROJECT_NAME or operation_type.lower() != "refund":
+                continue
+
+            amount = parse_amount(row.iloc[self.REFUND_AMOUNT_COLUMN_INDEX])
             purpose = " | ".join(
                 part for part in [
-                    str(row.get("operation_type", "")).strip(),
+                    operation_type,
                     str(row.get("operation_status", "")).strip(),
                     str(row.get("card_holder", "")).strip(),
                 ] if part
@@ -320,10 +326,16 @@ class MigTorgCsvParser(BaseStatementParser):
                     account_number=str(row.get("customer_purse / account_number", "")).strip(),
                     operation_date=parse_date(row.get("completed_at / operation_completed_at", "")),
                     document_number=str(row.get("id / operation_id", "") or row.get("external_id / payment_id", "")).strip(),
-                    direction=direction,
+                    direction="outgoing",
                     amount=amount,
                     counterparty_name=str(row.get("card_holder", "")).strip(),
                     payment_purpose=purpose,
+                    metadata={
+                        "migtorg_refund": True,
+                        "project_name": project_name,
+                        "operation_type": operation_type,
+                        "amount_source_column": "V",
+                    },
                 )
             )
         return transactions

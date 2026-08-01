@@ -194,6 +194,8 @@ class RefundReportService:
         )
 
     def _is_match(self, matched_rules: List[str], enabled_rules_count: int, options: Dict[str, Any]) -> bool:
+        if "migtorg_refund" in matched_rules:
+            return True
         if enabled_rules_count == 0:
             return False
         if options["match_mode"] == "all":
@@ -216,6 +218,9 @@ class RefundReportService:
     def _evaluate_rules(self, transaction: NormalizedTransaction, options: Dict[str, Any]) -> List[str]:
         matched_rules: List[str] = []
         purpose_normalized = normalize_text(transaction.payment_purpose)
+
+        if transaction.metadata.get("migtorg_refund") is True:
+            matched_rules.append("migtorg_refund")
 
         if options["enable_amount_multiple"] and options["amount_multiple"] > 0 and is_multiple_of(transaction.amount, options["amount_multiple"]):
             matched_rules.append("amount_multiple")
